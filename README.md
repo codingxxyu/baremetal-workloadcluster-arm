@@ -248,15 +248,40 @@ API VIP 必须提供 TCP passthrough：
 
 所有命令默认在已连接目标 Global 的管理节点上执行。一次只 apply 一个 YAML，不要执行 `kubectl apply -f cp/` 一把梭。
 
-### 6.1 创建 ARM64 CP Registration / SeedImage
+### 6.1 CP-01：创建 Control Plane Registration 和 SeedImage
 
-确认 `cp/01-registration-seedimage.yaml` 中的：
+文件：
 
-- 管理命名空间当前固定为 `cpaas-system`；复用到其他环境时统一替换所有 YAML 中的 namespace；
-- ARM64 ISO 已固定为 `10.243.166.5:11443/tkestack/kubeos-iso:baremetal`；
-- 必要的 COS_STATE 容量和 TPM 设置。
+```text
+cp/01-registration-seedimage.yaml
+```
 
-执行：
+这个文件包含两个资源：
+
+1. `MachineRegistration`：定义 CP 节点注册后的名称、Inventory 标签、安装盘和 TPM 行为；
+2. `SeedImage`：基于 ARM64 ISO 生成 CP 注册启动 ISO。
+
+首次部署 `arm-workloadcluster` 时，确认以下内容：
+
+| 字段 | 当前值/要求 |
+|---|---|
+| 所有 namespace | `cpaas-system` |
+| `MachineRegistration.metadata.name` | `arm-workloadcluster-cp-registration`，必须唯一 |
+| `SeedImage.metadata.name` | `arm-workloadcluster-cp-registration-iso`，必须唯一 |
+| `spec.baseImage` | `10.243.166.5:11443/tkestack/kubeos-iso:baremetal` |
+| `targetPlatform` | `linux/arm64` |
+| 安装设备 | `/dev/elemental-install-target` |
+| `machineName` | 保留 `${System Information/UUID}`，不要手工替换 |
+| `emulate-tpm` | 根据目标 VM 是否有 `/dev/tpm0` 确定 |
+
+复用到其他集群时，只修改目标环境对应的名称、namespace、Registry/ISO、TPM 和 COS_STATE；不要修改 Elemental 表达式：
+
+```text
+${System Information/UUID}
+${System Information/Serial Number}
+```
+
+先执行 server-side dry-run，再 apply：
 
 ```bash
 kubectl apply --dry-run=server -f cp/01-registration-seedimage.yaml
@@ -264,61 +289,233 @@ kubectl apply -f cp/01-registration-seedimage.yaml
 kubectl -n cpaas-system describe seedimage arm-workloadcluster-cp-registration-iso
 ```
 
-必须先看到 SeedImage 已生成并具有可下载地址，再给三台 CP VM 挂载 ISO。
+继续下一步前必须确认：
 
-### 6.2 在三台 ARM CP VM 上安装
+- `SeedImageReady=True`；
+- `status.downloadURL` 非空；
+- `status.checksumURL` 非空；
+- 生成的是 ARM64 ISO；
+- 还没有把同一批 CP Inventory 分配给其他 Pool。
 
-每台 VM 都单独确认系统盘：
+### 6.2 CP-02：使用生成的 ISO 启动三台 CP VM，并指定安装盘
+
+对 `cp01`、`cp02`、`cp03` 分别执行以下流程。每台 VM 都必须单独确认磁盘，不能因为三台 VM 的磁盘名称看起来相同就直接复制。
+
+#### 6.2.1 挂载和启动 SeedImage ISO
+
+在 DCS VM 控制台中：
+
+1. 将 `arm-workloadcluster-cp-registration-iso` 的 `status.downloadURL` 对应 ISO 挂载到 VM 的虚拟光驱；
+2. 设置该 VM 从虚拟光驱启动；
+3. 启动后进入 ARM64 Live OS shell；
+4. 确认当前确实是该 CP Registration 生成的 ISO。
+
+#### 6.2.2 找到真实系统盘
+
+通用 SeedImage 不应该把 `/dev/sda`、`/dev/vda` 或 `/dev/nvme0n1` 写死，因为不同 VM 的设备枚举顺序可能不同。进入 Live OS 后执行：
 
 ```bash
-lsblk -d -e7 -o NAME,PATH,SIZE,MODEL,SERIAL,WWN,HCTL
-ln -s <CONFIRMED_OS_DISK> /dev/elemental-install-target
+lsblk -d -e7 -o NAME,PATH,TYPE,SIZE,MODEL,SERIAL,WWN,HCTL
+ls -l /dev/disk/by-id/
+findmnt
+```
+
+根据容量、MODEL、SERIAL/WWN 以及 DCS 控制台的磁盘配置，确认哪一个是该 VM 的系统盘。不要选择：
+
+- `sr*` 或虚拟光驱；
+- `loop*`；
+- Live ISO 对应设备；
+- 已知的数据盘；
+- 仅凭设备名排序猜出的磁盘。
+
+#### 6.2.3 创建通用安装目标软链接
+
+优先使用稳定的 `/dev/disk/by-id/` 路径，而不是 `/dev/sdX` 或 `/dev/vdX`。下面的 `<DISK_BY_ID>` 必须替换为刚才确认的实际路径：
+
+```bash
+DISK_BY_ID=/dev/disk/by-id/<CONFIRMED_SYSTEM_DISK_ID>
+test -b "$DISK_BY_ID"
+readlink -f "$DISK_BY_ID"
+
+sudo rm -f /dev/elemental-install-target
+sudo ln -s "$DISK_BY_ID" /dev/elemental-install-target
+
+ls -l /dev/elemental-install-target
 readlink -f /dev/elemental-install-target
 ```
 
-注意：
+如果该 VM 没有可用的 `/dev/disk/by-id/` 稳定链接，才可以临时使用根据 `lsblk` 确认的实际设备路径：
 
-- `<CONFIRMED_OS_DISK>` 只能根据该台 VM 的 `lsblk` 结果填写；
-- 不要把 `/dev/sda`、`/dev/vda` 或 `/dev/nvme0n1` 写入 YAML；
-- 不要选择 `sr*`、`loop*` 或数据盘；
-- 安装触发重启后，必须弹出 ISO，并把启动顺序改为 disk-first；
-- 加入 Pool 前必须确认根文件系统不是 Live ISO。
+```bash
+sudo rm -f /dev/elemental-install-target
+sudo ln -s /dev/<CONFIRMED_DEVICE_FROM_LSBLK> /dev/elemental-install-target
+readlink -f /dev/elemental-install-target
+```
 
-### 6.3 发现 CP Inventory
+这个实际设备路径只用于当前 Live OS 的软链接，不能写回 Registration YAML，也不能复制到其他 VM。Registration YAML 始终保持：
+
+```yaml
+device: /dev/elemental-install-target
+```
+
+软链接必须在 Elemental 安装/注册流程开始前建立。确认目标正确后，再让 ISO 继续执行安装；不要在目标磁盘不明确时继续。
+
+#### 6.2.4 安装完成后的启动顺序
+
+安装触发重启后，对每台 VM 分别执行：
+
+1. 弹出虚拟光驱中的 SeedImage ISO；
+2. 将启动顺序改为 disk-first；
+3. 从刚才确认的系统盘启动；
+4. 确认系统不再从 Live ISO 启动；
+5. 确认根文件系统来自安装盘，而不是 Live ISO；
+6. 确认节点网络和 DNS 可访问 Global。
+
+不要把 `/dev/sda`、`/dev/vda` 或 `/dev/nvme0n1` 写入 YAML；它们最多只能作为现场排查时根据 `lsblk` 确认出的临时设备名。
+
+### 6.3 CP-03：发现并核对三台 MachineInventory
+
+安装完成并从磁盘启动后，在 Global 上执行：
 
 ```bash
 kubectl -n cpaas-system \
   get machineinventories.elemental.cattle.io -o wide
 ```
 
-三台 CP Inventory 必须满足：
+需要进一步查看每台 Inventory：
+
+```bash
+kubectl -n cpaas-system get machineinventory <INVENTORY_NAME> -o yaml
+```
+
+只把以下状态均满足的 Inventory 放入 CP Pool：
 
 - `Ready=True`；
 - allocation 为空或显示可用；
 - owner 为空；
-- 已从安装后的磁盘启动；
+- 已从安装后的磁盘启动，不是 Live ISO；
 - 架构为 ARM64；
-- `observedNetwork` 中的网卡名已记录。
+- UUID、MAC、hostname 和规划的 CP 节点一一对应；
+- `observedNetwork` 中的网卡名已记录；
+- 节点 IP 与 `10.243.166.130`、`10.243.166.131`、`10.243.166.132` 的规划对应。
 
-把实际 Inventory 名和实际网卡名填入 `cp/02-control-plane-pool.yaml`。
+然后只修改 `cp/02-control-plane-pool.yaml` 中的这些现场字段：
 
-### 6.4 创建 CP CAPI 资源
+```yaml
+machineInventories:
+  - name: "<实际 CP01 Inventory 名称>"
+    hostname: arm-workloadcluster-cp01
+    networkDevice: "<CP01 实际 CNI 网卡名>"
+```
 
-按以下顺序执行，每一步先 dry-run：
+CP02、CP03 按同样方式填写。不要修改 Pool 的 `clusterName` 和资源名，除非这是另一个集群模板。
+
+### 6.4 CP-04：创建 Control Plane MachineInventoryPool
+
+文件：
+
+```text
+cp/02-control-plane-pool.yaml
+```
+
+在 apply 前最后检查三件事：
+
+- 三个 Inventory 名称是真实存在且 Ready 的名称；
+- 三个 `networkDevice` 是每台 CP 的实际 CNI 网卡名；
+- 三个 Inventory 没有被其他 Pool 或 Machine 占用。
 
 ```bash
 kubectl apply --dry-run=server -f cp/02-control-plane-pool.yaml
 kubectl apply -f cp/02-control-plane-pool.yaml
+kubectl -n cpaas-system get machineinventorypool arm-workloadcluster-control-plane-pool -o yaml
+```
 
+确认 Pool 已接受三台 Inventory 后再继续。
+
+### 6.5 CP-05：创建 BaremetalCluster
+
+文件：
+
+```text
+cp/03-baremetal-cluster.yaml
+```
+
+部署前确认：
+
+- `controlPlaneLoadBalancer.host` 是已配置好的 `10.243.166.138`；
+- 外部 LB 已 TCP passthrough 到三台 CP 的 `6443`；
+- `networkDevice` 已替换为集群默认 CNI 网卡名；
+- `networkType` 与目标环境的 Kube-OVN 配置一致。
+
+```bash
 kubectl apply --dry-run=server -f cp/03-baremetal-cluster.yaml
 kubectl apply -f cp/03-baremetal-cluster.yaml
+kubectl -n cpaas-system get baremetalcluster arm-workloadcluster -o yaml
+```
 
+### 6.6 CP-06：创建 Control Plane BaremetalMachineTemplate
+
+文件：
+
+```text
+cp/04-control-plane-machine-template.yaml
+```
+
+该文件通常只需要确认 namespace、模板名称和 Pool 引用，不需要填写节点 IP：
+
+```yaml
+machineInventoryPoolRef:
+  name: arm-workloadcluster-control-plane-pool
+```
+
+执行：
+
+```bash
 kubectl apply --dry-run=server -f cp/04-control-plane-machine-template.yaml
 kubectl apply -f cp/04-control-plane-machine-template.yaml
+```
 
+### 6.7 CP-07：创建 CAPI Cluster
+
+文件：
+
+```text
+cp/05-cluster.yaml
+```
+
+部署前检查：
+
+- `infrastructureRef` 指向 `BaremetalCluster/arm-workloadcluster`；
+- `controlPlaneRef` 指向 `KubeadmControlPlane/arm-workloadcluster-control-plane`；
+- Pod CIDR 为 `100.150.0.0/16`；
+- Service CIDR 为 `100.151.0.0/16`；
+- Kube-OVN Join CIDR 为 `100.68.0.0/16`；
+- Registry 和 Kube-OVN 版本与目标 ACP 4.4.1 一致。
+
+```bash
 kubectl apply --dry-run=server -f cp/05-cluster.yaml
 kubectl apply -f cp/05-cluster.yaml
+kubectl -n cpaas-system get cluster arm-workloadcluster -o yaml
+```
 
+### 6.8 CP-08：创建 KubeadmControlPlane
+
+文件：
+
+```text
+cp/06-control-plane.yaml
+```
+
+部署前检查：
+
+- `replicas: 3`；
+- `version: v1.35.6-acp.9`；
+- `machineTemplate.infrastructureRef` 指向 CP BaremetalMachineTemplate；
+- SSH 公钥已替换；
+- CoreDNS、etcd、imageRepository 与目标 ACP 版本一致；
+- 不要把 `preKubeadmCommands` 中的现场私有命令从其他环境直接复制过来。
+
+```bash
 kubectl apply --dry-run=server -f cp/06-control-plane.yaml
 kubectl apply -f cp/06-control-plane.yaml
 ```
@@ -342,13 +539,23 @@ kubectl -n cpaas-system \
 
 ## 7. Worker 部署顺序
 
-### 7.1 创建独立 ARM64 Worker Registration / SeedImage
+### 7.1 Worker-01：创建 Worker Registration 和 SeedImage
 
-确认 `worker/01-registration-seedimage.yaml` 中的：
+文件：
 
-- 管理命名空间当前固定为 `cpaas-system`；复用到其他环境时统一替换所有 YAML 中的 namespace；
-- ARM64 ISO 与 CP 使用同一个已确认的 `10.243.166.5:11443/tkestack/kubeos-iso:baremetal`；
-- 必要的 COS_STATE 容量和 TPM 设置。
+```text
+worker/01-registration-seedimage.yaml
+```
+
+确认以下内容：
+
+- namespace 为 `cpaas-system`；
+- Worker Registration 和 SeedImage 名称与 CP 不重复；
+- `baseImage` 为 ARM64 `10.243.166.5:11443/tkestack/kubeos-iso:baremetal`；
+- `targetPlatform: linux/arm64`；
+- `device: /dev/elemental-install-target`；
+- `machineName` 和 UUID/Serial Number 表达式保持不变；
+- TPM 和 COS_STATE 设置符合 Worker VM。
 
 ```bash
 kubectl apply --dry-run=server -f worker/01-registration-seedimage.yaml
@@ -356,11 +563,31 @@ kubectl apply -f worker/01-registration-seedimage.yaml
 kubectl -n cpaas-system describe seedimage arm-workloadcluster-worker-registration-iso
 ```
 
-不要使用 CP 的 ISO。
+继续前确认 `SeedImageReady=True`、`downloadURL` 和 `checksumURL` 非空。CP 和 Worker 可以使用同一个 ARM64 ISO 基础镜像，但必须是两个独立的 SeedImage 资源。
 
-### 7.2 安装三台 ARM Worker
+### 7.2 Worker-02：启动 ISO、选择系统盘并安装三台 Worker
 
-Worker 使用自己的 ARM64 ISO。每台 VM 仍然单独执行认盘、建立 `/dev/elemental-install-target`、安装、弹出 ISO、disk-first 启动。
+对 `worker01`、`worker02`、`worker03` 分别执行与 CP 相同的磁盘流程：
+
+1. 在 DCS 控制台挂载 Worker SeedImage ISO 并从虚拟光驱启动；
+2. 在 ARM64 Live OS 中执行 `lsblk -d -e7 -o NAME,PATH,TYPE,SIZE,MODEL,SERIAL,WWN,HCTL`；
+3. 根据磁盘 ID、容量、MODEL、SERIAL/WWN 确认系统盘；
+4. 优先选择 `/dev/disk/by-id/<稳定磁盘 ID>`；
+5. 创建软链接：
+
+```bash
+DISK_BY_ID=/dev/disk/by-id/<CONFIRMED_WORKER_SYSTEM_DISK_ID>
+test -b "$DISK_BY_ID"
+sudo rm -f /dev/elemental-install-target
+sudo ln -s "$DISK_BY_ID" /dev/elemental-install-target
+readlink -f /dev/elemental-install-target
+```
+
+6. 让 Elemental 使用 `/dev/elemental-install-target` 完成安装；
+7. 重启后弹出 ISO，改为 disk-first；
+8. 确认系统从安装盘启动，而不是继续从 Live ISO 启动。
+
+软链接只在当前 VM 的 Live OS 环境中根据实际磁盘创建，不能把某台 VM 的 `/dev/sdX`、`/dev/vdX` 或 by-id 路径复制到其他节点的 YAML 中。
 
 安装后再配置并持久化节点 IP：
 
@@ -372,27 +599,103 @@ worker03 -> 10.243.166.135
 
 具体接口、前缀、网关、DNS、VLAN/bond 配置必须以现场网络表和 VM 实际网卡为准，不能直接复制 Mandiri 的 `eth0` 或 `eth0.329`。
 
-### 7.3 发现 Worker Inventory 并创建 Pool
+### 7.3 Worker-03：发现 Inventory 并填写 Worker Pool
 
 ```bash
 kubectl -n cpaas-system \
   get machineinventories.elemental.cattle.io -o wide
+kubectl -n cpaas-system get machineinventory <WORKER_INVENTORY_NAME> -o yaml
 ```
 
-将三台 Worker 的实际 Inventory 名和实际网卡名填入 `worker/02-worker-pool.yaml`，确认三台都是 `Ready=True` 且可用。
+确认三台 Worker Inventory：
 
-### 7.4 创建 Worker CAPI 资源
+- `Ready=True`；
+- allocation 为空或可用；
+- owner 为空；
+- 已从安装后的磁盘启动；
+- 架构为 ARM64；
+- UUID、MAC、hostname 和 Worker IP 一一对应；
+- `observedNetwork` 中的网卡名已记录。
+
+只修改 `worker/02-worker-pool.yaml` 中的实际 Inventory 名和实际网卡名：
+
+```yaml
+machineInventories:
+  - name: "<实际 Worker01 Inventory 名称>"
+    hostname: arm-workloadcluster-worker01
+    networkDevice: "<Worker01 实际 CNI 网卡名>"
+```
+
+Worker02、Worker03 按相同方式填写，然后执行：
 
 ```bash
 kubectl apply --dry-run=server -f worker/02-worker-pool.yaml
 kubectl apply -f worker/02-worker-pool.yaml
+kubectl -n cpaas-system get machineinventorypool arm-workloadcluster-worker-pool -o yaml
+```
 
+### 7.4 Worker-04：创建 Worker BaremetalMachineTemplate
+
+文件：
+
+```text
+worker/03-worker-machine-template.yaml
+```
+
+确认 `machineInventoryPoolRef.name` 为：
+
+```text
+arm-workloadcluster-worker-pool
+```
+
+```bash
 kubectl apply --dry-run=server -f worker/03-worker-machine-template.yaml
 kubectl apply -f worker/03-worker-machine-template.yaml
+```
 
+### 7.5 Worker-05：创建 Worker KubeadmConfigTemplate
+
+文件：
+
+```text
+worker/04-worker-kubeadm-config-template.yaml
+```
+
+部署前修改：
+
+- SSH 公钥；
+- namespace（当前为 `cpaas-system`）；
+- Worker 标签和目标环境需要的 bootstrap 配置。
+
+保留：
+
+```yaml
+node-labels: "kube-ovn/role=worker"
+```
+
+```bash
 kubectl apply --dry-run=server -f worker/04-worker-kubeadm-config-template.yaml
 kubectl apply -f worker/04-worker-kubeadm-config-template.yaml
+```
 
+### 7.6 Worker-06：创建 MachineDeployment
+
+文件：
+
+```text
+worker/05-worker-machine-deployment.yaml
+```
+
+部署前确认：
+
+- `replicas: 3`；
+- `version: v1.35.6-acp.9`；
+- `clusterName: arm-workloadcluster`；
+- `bootstrap.configRef` 指向 Worker KubeadmConfigTemplate；
+- `infrastructureRef` 指向 Worker BaremetalMachineTemplate；
+- `maxSurge: 0`，避免裸金属滚动更新时临时超配。
+
+```bash
 kubectl apply --dry-run=server -f worker/05-worker-machine-deployment.yaml
 kubectl apply -f worker/05-worker-machine-deployment.yaml
 ```
