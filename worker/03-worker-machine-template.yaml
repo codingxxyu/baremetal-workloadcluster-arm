@@ -1,0 +1,13 @@
+# Official worker BaremetalMachineTemplate.
+# Only the pool name is required. allocationPolicy is reserved; the
+# provider currently treats every pool as Ordered.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: BaremetalMachineTemplate
+metadata:
+  name: arm-workloadcluster-worker-template
+  namespace: "<MANAGEMENT_NAMESPACE>"
+spec:
+  template:
+    spec:
+      machineInventoryPoolRef:
+        name: arm-workloadcluster-worker-pool

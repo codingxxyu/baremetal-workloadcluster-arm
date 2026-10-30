@@ -1,0 +1,23 @@
+# Apply only after the three ARM VMs have booted the SeedImage,
+# left the Live ISO, registered as MachineInventory, and are Ready=True.
+# Replace machineInventories[].name with the real Master inventory names first.
+# machineInventories[].networkDevice is optional. It overrides
+# BaremetalCluster.spec.networkDevice for that host only. Leave it as
+# eth0 when the CNI NIC matches the cluster default.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: MachineInventoryPool
+metadata:
+  name: arm-workloadcluster-control-plane-pool
+  namespace: "<MANAGEMENT_NAMESPACE>"
+spec:
+  clusterName: arm-workloadcluster
+  machineInventories:
+    - name: "<CP_INVENTORY_1>"
+      hostname: arm-workloadcluster-cp01
+      networkDevice: "<CP_NODE_1_NETWORK_DEVICE>"
+    - name: "<CP_INVENTORY_2>"
+      hostname: arm-workloadcluster-cp02
+      networkDevice: "<CP_NODE_2_NETWORK_DEVICE>"
+    - name: "<CP_INVENTORY_3>"
+      hostname: arm-workloadcluster-cp03
+      networkDevice: "<CP_NODE_3_NETWORK_DEVICE>"

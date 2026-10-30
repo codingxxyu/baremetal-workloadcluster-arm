@@ -1,0 +1,41 @@
+# ARM64 worker MachineDeployment for arm-workloadcluster.
+# Default is one Worker per cluster. Bare-metal cannot over-provision:
+# keep maxSurge 0 and maxUnavailable 1.
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachineDeployment
+metadata:
+  name: arm-workloadcluster-worker-deployment
+  namespace: "<MANAGEMENT_NAMESPACE>"
+spec:
+  clusterName: arm-workloadcluster
+  replicas: 3
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 0
+      maxUnavailable: 1
+  selector:
+    matchLabels:
+      cluster.x-k8s.io/deployment-name: arm-workloadcluster-worker-deployment
+  template:
+    metadata:
+      labels:
+        cluster.x-k8s.io/deployment-name: arm-workloadcluster-worker-deployment
+        cluster.x-k8s.io/cluster-name: arm-workloadcluster
+        pool.name: arm-workloadcluster-workers
+    spec:
+      clusterName: arm-workloadcluster
+      version: "v1.35.6-acp.9"
+      nodeDrainTimeout: 5m
+      nodeVolumeDetachTimeout: 5m
+      bootstrap:
+        configRef:
+          apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
+          kind: KubeadmConfigTemplate
+          name: arm-workloadcluster-worker-kubeadm-config
+          namespace: "<MANAGEMENT_NAMESPACE>"
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: BaremetalMachineTemplate
+        name: arm-workloadcluster-worker-template
+        namespace: "<MANAGEMENT_NAMESPACE>"

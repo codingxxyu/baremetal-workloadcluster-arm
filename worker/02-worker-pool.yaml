@@ -1,0 +1,20 @@
+# Apply only after all three ARM worker VMs have booted the SeedImage,
+# left the Live ISO, registered as MachineInventory, and are Ready=True.
+# Replace inventory and network-device placeholders with observed values.
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: MachineInventoryPool
+metadata:
+  name: arm-workloadcluster-worker-pool
+  namespace: "<MANAGEMENT_NAMESPACE>"
+spec:
+  clusterName: arm-workloadcluster
+  machineInventories:
+    - name: "<WORKER_INVENTORY_1>"
+      hostname: arm-workloadcluster-worker01
+      networkDevice: "<WORKER_NODE_1_NETWORK_DEVICE>"
+    - name: "<WORKER_INVENTORY_2>"
+      hostname: arm-workloadcluster-worker02
+      networkDevice: "<WORKER_NODE_2_NETWORK_DEVICE>"
+    - name: "<WORKER_INVENTORY_3>"
+      hostname: arm-workloadcluster-worker03
+      networkDevice: "<WORKER_NODE_3_NETWORK_DEVICE>"

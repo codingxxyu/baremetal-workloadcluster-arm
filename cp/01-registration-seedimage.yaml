@@ -1,0 +1,73 @@
+# ARM64 control-plane Registration / SeedImage for arm-workloadcluster.
+# Apply on the management cluster after Bare Metal Provider and ARM images are ready.
+# Worker uses worker/01-registration-seedimage.yaml, not this pair.
+apiVersion: elemental.cattle.io/v1beta1
+kind: MachineRegistration
+metadata:
+  name: arm-workloadcluster-cp-registration
+  namespace: "<MANAGEMENT_NAMESPACE>"
+  labels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+    kubernetes.io/arch: arm64
+spec:
+  # ${...} placeholders are expanded by elemental-register from SMBIOS data.
+  # System UUID is preferred over Serial Number because it is more reliable
+  # across virtualised test environments.
+  machineName: "arm-workloadcluster-cp-arm64-${System Information/UUID}"
+  machineInventoryLabels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+    kubernetes.io/arch: arm64
+    pool.baremetal.alauda.io/eligible: "true"
+    elemental.cattle.io/serial-number: "${System Information/Serial Number}"
+  machineInventoryAnnotations:
+    elemental.cattle.io/machine-uuid: "${System Information/UUID}"
+  config:
+    elemental:
+      install:
+        # Recommended: keep this generic path in the ISO. Do not bake
+        # a host disk such as /dev/sda into SeedImage. On each Live ISO,
+        # symlink the real OS disk to this path, then after install set
+        # BMC boot order to disk-first and eject the ISO (see README).
+        device: /dev/elemental-install-target
+        eject-cd: true
+        reboot: true
+        snapshotter:
+          type: btrfs
+          maxSnaps: 4
+      registration:
+        # false only when the host has a real hardware TPM (/dev/tpm0). Set true
+        # (with emulated-tpm-seed: -1) on any host without one, including physical
+        # servers that ship without a TPM module.
+        emulate-tpm: true
+        emulated-tpm-seed: -1
+---
+apiVersion: elemental.cattle.io/v1beta1
+kind: SeedImage
+metadata:
+  name: arm-workloadcluster-cp-registration-iso
+  namespace: "<MANAGEMENT_NAMESPACE>"
+  labels:
+    app.kubernetes.io/part-of: cluster-api-provider-baremetal
+spec:
+  type: iso
+  baseImage: "10.243.166.5:11443/tkestack/kubeos-iso:baremetal"
+  registrationRef:
+    apiVersion: elemental.cattle.io/v1beta1
+    kind: MachineRegistration
+    name: arm-workloadcluster-cp-registration
+    namespace: "<MANAGEMENT_NAMESPACE>"
+  targetPlatform: linux/arm64
+  size: 20Gi
+  cleanupAfterMinutes: 120
+  cloud-config:
+    stages:
+      boot:
+        - name: "Size COS_STATE for reprovisioning"
+          files:
+            - path: /etc/elemental/config.d/partitions.yaml
+              permissions: 0644
+              content: |
+                install:
+                  partitions:
+                    state:
+                      size: 20480
