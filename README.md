@@ -98,12 +98,15 @@ baremetal-workloadcluster-arm/
 
 CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者可以使用同一个已确认的 ARM64 `kubeos-iso:baremetal` 作为 `baseImage`。不要混用生成后的 ISO 文件或 Registration 配置。
 
+同一个 Global 中可以同时存在多个 SeedImage 和 MachineRegistration，包括不同集群、不同架构和不同角色的资源。每套资源必须使用唯一名称，并通过独立的 `registrationRef`、Inventory Pool 和 CAPI 模板隔离。旧的 x86 SeedImage 不要直接用于 ARM 节点；ARM SeedImage 的 `targetPlatform` 必须是 `linux/arm64`。
+
+本项目的所有 Kubernetes 资源已经使用管理命名空间 `cpaas-system`。如果复用到其他 Global 或其他管理命名空间，需要在所有 YAML 的 `metadata.namespace`、`registrationRef.namespace` 和模板引用 namespace 中统一替换，不能只修改一处。
+
 ## 3. 必须先确认的现场值
 
 以下现场值没有从 Mandiri 环境复制，必须在目标 Global / ARM VM 环境中确认后替换；ACP 4.4.1 的 Kubernetes、CoreDNS、etcd 和 Kube-OVN 版本已按上面的版本矩阵固定：
 
 ```text
-<MANAGEMENT_NAMESPACE>
 <KUBEADM_IMAGE_REPOSITORY>
 <SSH_AUTHORIZED_KEY>
 <CP_INVENTORY_1/2/3>
@@ -120,7 +123,7 @@ CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者�
 | 修改项 | 需要修改的位置 | 当前项目值/说明 |
 |---|---|---|
 | 集群名称 | 所有 YAML 的 `metadata.name`、`spec.clusterName`、引用字段、标签和 hostname | 当前为 `arm-workloadcluster` |
-| 管理命名空间 | 所有 YAML 的 `metadata.namespace`、引用对象的 `namespace` | 当前为 `<MANAGEMENT_NAMESPACE>`，通常是 `cpaas-system` |
+| 管理命名空间 | 所有 YAML 的 `metadata.namespace`、引用对象的 `namespace` | 当前为 `cpaas-system`；复用时按目标 Global 实际 namespace 统一修改 |
 | ACP/Kubernetes 版本 | `cp/06-control-plane.yaml`、`worker/05-worker-machine-deployment.yaml`、catalog key | 当前为 `v1.35.6-acp.9`，换 ACP 版本时必须重新查 OS Support Matrix |
 | CoreDNS / etcd / Kube-OVN 版本 | `cp/06-control-plane.yaml`、`cp/05-cluster.yaml` | 当前分别为 `1.14.7-v4.4.7`、`v3.6.13-acp.2`、`v4.4.12` |
 | 平台 Registry | `cp/05-cluster.yaml` 的 `cpaas.io/registry-address`、ISO/rootfs 引用、catalog | 当前为 `10.243.166.5:11443` |

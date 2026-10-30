@@ -8,7 +8,7 @@ apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: MachineInventoryPool
 metadata:
   name: arm-workloadcluster-control-plane-pool
-  namespace: "<MANAGEMENT_NAMESPACE>"
+  namespace: "cpaas-system"
 spec:
   clusterName: arm-workloadcluster
   machineInventories:

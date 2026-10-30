@@ -5,7 +5,7 @@ apiVersion: controlplane.cluster.x-k8s.io/v1beta1
 kind: KubeadmControlPlane
 metadata:
   name: arm-workloadcluster-control-plane
-  namespace: "<MANAGEMENT_NAMESPACE>"
+  namespace: "cpaas-system"
 spec:
   replicas: 3
   version: "v1.35.6-acp.9"

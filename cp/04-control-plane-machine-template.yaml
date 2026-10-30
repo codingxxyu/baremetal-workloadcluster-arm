@@ -3,7 +3,7 @@ apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
 kind: BaremetalMachineTemplate
 metadata:
   name: arm-workloadcluster-control-plane-template
-  namespace: "<MANAGEMENT_NAMESPACE>"
+  namespace: "cpaas-system"
 spec:
   template:
     spec:

@@ -5,7 +5,7 @@ apiVersion: elemental.cattle.io/v1beta1
 kind: MachineRegistration
 metadata:
   name: arm-workloadcluster-cp-registration
-  namespace: "<MANAGEMENT_NAMESPACE>"
+  namespace: "cpaas-system"
   labels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
     kubernetes.io/arch: arm64
@@ -45,7 +45,7 @@ apiVersion: elemental.cattle.io/v1beta1
 kind: SeedImage
 metadata:
   name: arm-workloadcluster-cp-registration-iso
-  namespace: "<MANAGEMENT_NAMESPACE>"
+  namespace: "cpaas-system"
   labels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
 spec:
@@ -55,7 +55,7 @@ spec:
     apiVersion: elemental.cattle.io/v1beta1
     kind: MachineRegistration
     name: arm-workloadcluster-cp-registration
-    namespace: "<MANAGEMENT_NAMESPACE>"
+    namespace: "cpaas-system"
   targetPlatform: linux/arm64
   size: 20Gi
   cleanupAfterMinutes: 120
