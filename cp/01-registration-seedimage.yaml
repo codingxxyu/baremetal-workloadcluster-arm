@@ -31,7 +31,7 @@ spec:
         # symlink the real OS disk to this path, then after install set
         # BMC boot order to disk-first and eject the ISO (see README).
         device: /dev/elemental-install-target
-        system-uri: "10.243.166.5:11443/tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>"
+        system-uri: "10.243.166.5:11443/tkestack/kubeos-rootfs:baremetal"
         eject-cd: true
         reboot: true
       registration:
@@ -50,7 +50,7 @@ metadata:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
 spec:
   type: iso
-  baseImage: "10.243.166.5:11443/tkestack/kubeos-iso:<K25_ARM64_IMAGE_TAG>"
+  baseImage: "10.243.166.5:11443/tkestack/kubeos-iso:baremetal"
   registrationRef:
     apiVersion: elemental.cattle.io/v1beta1
     kind: MachineRegistration

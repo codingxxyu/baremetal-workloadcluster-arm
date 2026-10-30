@@ -100,7 +100,7 @@ baremetal-workloadcluster-arm/
 | [`worker/04-worker-kubeadm-config-template.yaml`](worker/04-worker-kubeadm-config-template.yaml) | Worker kubeadm bootstrap |
 | [`worker/05-worker-machine-deployment.yaml`](worker/05-worker-machine-deployment.yaml) | 三副本 Worker MachineDeployment |
 
-CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者可以使用同一个已确认的 K25 ARM64 ISO/rootfs tag，但不能混用生成后的 ISO 文件或 Registration 配置。最终 Registry 不要继续使用 `:baremetal` 作为 K25 交付 tag。
+CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者使用同一个已确认的 K25 ARM64 ISO/rootfs tag `baremetal`，但不能混用生成后的 ISO 文件或 Registration 配置。
 
 同一个 Global 中可以同时存在多个 SeedImage 和 MachineRegistration，包括不同集群、不同架构和不同角色的资源。每套资源必须使用唯一名称，并通过独立的 `registrationRef`、Inventory Pool 和 CAPI 模板隔离。旧的 x86 SeedImage 不要直接用于 ARM 节点；ARM SeedImage 的 `targetPlatform` 必须是 `linux/arm64`。
 
@@ -111,7 +111,6 @@ CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者�
 以下现场值没有从 Mandiri 环境复制，必须在目标 Global / ARM VM 环境中确认后替换；ACP 4.4.1 的 Kubernetes、CoreDNS、etcd 和 Kube-OVN 版本已按上面的版本矩阵固定：
 
 ```text
-<K25_ARM64_IMAGE_TAG>
 <KUBEADM_IMAGE_REPOSITORY>
 <SSH_AUTHORIZED_KEY>
 <CP_INVENTORY_1/2/3>
@@ -121,7 +120,7 @@ CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者�
 <CLUSTER_DEFAULT_NETWORK_DEVICE>
 ```
 
-`<K25_ARM64_IMAGE_TAG>` 必须从实际 ACP 4.4.1 K25 ARM64 交付包或 Registry 导入结果填写。ISO 和 rootfs 使用同一个 tag。不要使用新页面中的 ACP 4.4.0 preview tag。
+ISO 和 rootfs 使用现场已导入的 tag `baremetal`。不要使用新页面中的 ACP 4.4.0 preview tag。
 
 ### 3.1 复用到其他集群时的修改清单
 
@@ -134,8 +133,8 @@ CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者�
 | ACP/Kubernetes 版本 | `cp/06-control-plane.yaml`、`worker/05-worker-machine-deployment.yaml`、catalog key | 当前为 `v1.35.6-acp.9`，换 ACP 版本时必须重新查 OS Support Matrix |
 | CoreDNS / etcd / Kube-OVN 版本 | `cp/06-control-plane.yaml`、`cp/05-cluster.yaml` | 当前分别为 `1.14.7-v4.4.7`、`v3.6.13-acp.2`、`v4.4.12` |
 | 平台 Registry | `cp/05-cluster.yaml` 的 `cpaas.io/registry-address`、ISO/rootfs 引用、catalog | 当前为 `10.243.166.5:11443` |
-| ARM64 ISO | `cp/01-registration-seedimage.yaml`、`worker/01-registration-seedimage.yaml` 的 `spec.baseImage` | `tkestack/kubeos-iso:<K25_ARM64_IMAGE_TAG>` |
-| ARM64 rootfs | Registration `install.system-uri` 和 `elemental-image-catalog` | `tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>`，catalog key 为 `v1.35.6-acp.9_arm64_alaudaos.k.25` |
+| ARM64 ISO | `cp/01-registration-seedimage.yaml`、`worker/01-registration-seedimage.yaml` 的 `spec.baseImage` | `tkestack/kubeos-iso:baremetal` |
+| ARM64 rootfs | Registration `install.system-uri` 和 `elemental-image-catalog` | `tkestack/kubeos-rootfs:baremetal`，catalog key 为 `v1.35.6-acp.9_arm64_alaudaos.k.25` |
 | Control Plane Registration | `cp/01-registration-seedimage.yaml` 的 Registration、SeedImage 名称和 `registrationRef` | 必须使用新集群独立的资源名 |
 | Worker Registration | `worker/01-registration-seedimage.yaml` 的 Registration、SeedImage 名称和 `registrationRef` | 必须与 CP Registration 分开 |
 | API VIP 和端口 | `cp/03-baremetal-cluster.yaml`、LB 配置和 README 拓扑 | 当前为 `10.243.166.138:6443` |
@@ -192,8 +191,8 @@ CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者�
 
 - Bare Metal Provider、Kubeadm Provider 及对应 CRD 已 Ready；
 - 平台 Registry 地址为 `10.243.166.5:11443`；
-- 配对的 K25 ARM64 `kubeos-iso:<K25_ARM64_IMAGE_TAG>` 已推入平台 Registry；
-- 配对的 K25 ARM64 `kubeos-rootfs:<K25_ARM64_IMAGE_TAG>` 已推入平台 Registry；
+- 配对的 K25 ARM64 `kubeos-iso:baremetal` 已推入平台 Registry；
+- 配对的 K25 ARM64 `kubeos-rootfs:baremetal` 已推入平台 Registry；
 - `elemental-image-catalog` 已存在，并且 `v1.35.6-acp.9_arm64_alaudaos.k.25` 指向该 ARM64 rootfs；
 - 六台 ARM VM 使用 UEFI，能读取 SMBIOS/DMI，系统盘建议至少 100 GiB；
 - 当前 Pod CIDR 为 `100.150.0.0/16`、Service CIDR 为 `100.151.0.0/16`、Kube-OVN Join CIDR 为 `100.68.0.0/16`，且不与 Global、其他 Workload 或物理网络冲突；
@@ -217,9 +216,9 @@ grep -RInE '<[A-Z0-9_]+>' README.md cp worker
 
 | 字段 | 镜像 | 用途 |
 |---|---|---|
-| `SeedImage.spec.baseImage` | `kubeos-iso:<K25_ARM64_IMAGE_TAG>` | 构建 Live ISO |
-| `MachineRegistration.spec.config.elemental.install.system-uri` | `kubeos-rootfs:<K25_ARM64_IMAGE_TAG>` | Live ISO 首次写入 K25 系统 |
-| `elemental-image-catalog` | `kubeos-rootfs:<K25_ARM64_IMAGE_TAG>` | CAPI reprovision / upgrade |
+| `SeedImage.spec.baseImage` | `kubeos-iso:baremetal` | 构建 Live ISO |
+| `MachineRegistration.spec.config.elemental.install.system-uri` | `kubeos-rootfs:baremetal` | Live ISO 首次写入 K25 系统 |
+| `elemental-image-catalog` | `kubeos-rootfs:baremetal` | CAPI reprovision / upgrade |
 
 不要把 ISO 写进 catalog，也不要把 rootfs 写成 SeedImage 的 `baseImage`。ISO 和 rootfs 必须来自同一 K25 ARM64 交付包。
 
@@ -240,7 +239,7 @@ kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```bash
 kubectl -n cpaas-system patch configmap elemental-image-catalog \
   --type merge \
-  -p '{"data":{"v1.35.6-acp.9_arm64_alaudaos.k.25":"10.243.166.5:11443/tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>"}}'
+  -p '{"data":{"v1.35.6-acp.9_arm64_alaudaos.k.25":"10.243.166.5:11443/tkestack/kubeos-rootfs:baremetal"}}'
 ```
 
 然后精确读取：
@@ -297,8 +296,8 @@ cp/01-registration-seedimage.yaml
 | 所有 namespace | `cpaas-system` |
 | `MachineRegistration.metadata.name` | `arm-workloadcluster-cp-registration`，必须唯一 |
 | `SeedImage.metadata.name` | `arm-workloadcluster-cp-registration-iso`，必须唯一 |
-| `spec.baseImage` | `10.243.166.5:11443/tkestack/kubeos-iso:<K25_ARM64_IMAGE_TAG>` |
-| `install.system-uri` | `10.243.166.5:11443/tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>` |
+| `spec.baseImage` | `10.243.166.5:11443/tkestack/kubeos-iso:baremetal` |
+| `install.system-uri` | `10.243.166.5:11443/tkestack/kubeos-rootfs:baremetal` |
 | `targetPlatform` | `linux/arm64` |
 | 安装设备 | `/dev/elemental-install-target` |
 | OS 标签 | `os.baremetal.alauda.io/id=alaudaos.k.25` |
@@ -704,8 +703,8 @@ worker/01-registration-seedimage.yaml
 
 - namespace 为 `cpaas-system`；
 - Worker Registration 和 SeedImage 名称与 CP 不重复；
-- `baseImage` 为 ARM64 `10.243.166.5:11443/tkestack/kubeos-iso:<K25_ARM64_IMAGE_TAG>`；
-- `install.system-uri` 为配对的 `kubeos-rootfs:<K25_ARM64_IMAGE_TAG>`；
+- `baseImage` 为 ARM64 `10.243.166.5:11443/tkestack/kubeos-iso:baremetal`；
+- `install.system-uri` 为配对的 `kubeos-rootfs:baremetal`；
 - `targetPlatform: linux/arm64`；
 - `device: /dev/elemental-install-target`；
 - `machineName` 和 UUID/Serial Number 表达式保持不变；
