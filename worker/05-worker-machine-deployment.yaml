@@ -5,7 +5,7 @@ apiVersion: cluster.x-k8s.io/v1beta1
 kind: MachineDeployment
 metadata:
   name: arm-workloadcluster-worker-deployment
-  namespace: "cpaas-system"
+  namespace: cpaas-system
 spec:
   clusterName: arm-workloadcluster
   replicas: 3
@@ -33,9 +33,9 @@ spec:
           apiVersion: bootstrap.cluster.x-k8s.io/v1beta1
           kind: KubeadmConfigTemplate
           name: arm-workloadcluster-worker-kubeadm-config
-          namespace: "cpaas-system"
+          namespace: cpaas-system
       infrastructureRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: BaremetalMachineTemplate
         name: arm-workloadcluster-worker-template
-        namespace: "cpaas-system"
+        namespace: cpaas-system

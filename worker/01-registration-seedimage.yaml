@@ -6,7 +6,7 @@ apiVersion: elemental.cattle.io/v1beta1
 kind: MachineRegistration
 metadata:
   name: arm-workloadcluster-worker-registration
-  namespace: "cpaas-system"
+  namespace: cpaas-system
   labels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
     kubernetes.io/arch: arm64
@@ -36,7 +36,7 @@ apiVersion: elemental.cattle.io/v1beta1
 kind: SeedImage
 metadata:
   name: arm-workloadcluster-worker-registration-iso
-  namespace: "cpaas-system"
+  namespace: cpaas-system
   labels:
     app.kubernetes.io/part-of: cluster-api-provider-baremetal
     kubernetes.io/arch: arm64
@@ -50,7 +50,7 @@ spec:
     apiVersion: elemental.cattle.io/v1beta1
     kind: MachineRegistration
     name: arm-workloadcluster-worker-registration
-    namespace: "cpaas-system"
+    namespace: cpaas-system
   cloud-config:
     stages:
       boot:
