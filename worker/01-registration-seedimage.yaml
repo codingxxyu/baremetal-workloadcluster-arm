@@ -1,7 +1,7 @@
 # ARM64 Worker Registration / SeedImage.
-# Do not reuse the x86 Worker ISO. Do not overwrite
-# kubeos-rootfs:baremetal / kubeos-iso:baremetal.
-# Apply after the ARM images are in the platform registry.
+# Do not reuse an x86 Worker ISO. Use the same K25 ARM64
+# ISO/rootfs tag as the control-plane Registration.
+# Apply after the ARM K25 images are in the platform registry.
 apiVersion: elemental.cattle.io/v1beta1
 kind: MachineRegistration
 metadata:
@@ -17,17 +17,17 @@ spec:
     kubernetes.io/arch: arm64
     pool.baremetal.alauda.io/eligible: "true"
     elemental.cattle.io/serial-number: "${System Information/Serial Number}"
+    os.baremetal.alauda.io/id: alaudaos.k.25
+    os.baremetal.alauda.io/arch: "${Runtime/Architecture}"
   machineInventoryAnnotations:
     elemental.cattle.io/machine-uuid: "${System Information/UUID}"
   config:
     elemental:
       install:
         device: /dev/elemental-install-target
+        system-uri: "10.243.166.5:11443/tkestack/kubeos-rootfs:<K25_ARM64_IMAGE_TAG>"
         eject-cd: true
         reboot: true
-        snapshotter:
-          type: btrfs
-          maxSnaps: 4
       registration:
         emulate-tpm: true
         emulated-tpm-seed: -1
@@ -42,24 +42,23 @@ metadata:
     kubernetes.io/arch: arm64
 spec:
   type: iso
-  baseImage: "10.243.166.5:11443/tkestack/kubeos-iso:baremetal"
+  baseImage: "10.243.166.5:11443/tkestack/kubeos-iso:<K25_ARM64_IMAGE_TAG>"
   targetPlatform: linux/arm64
   size: 20Gi
-  cleanupAfterMinutes: 120
+  cleanupAfterMinutes: 240
   registrationRef:
     apiVersion: elemental.cattle.io/v1beta1
     kind: MachineRegistration
     name: arm-workloadcluster-worker-registration
     namespace: cpaas-system
   cloud-config:
+    name: live-registry
     stages:
-      boot:
-        - name: "Size COS_STATE for reprovisioning"
-          files:
-            - path: /etc/elemental/config.d/partitions.yaml
+      network:
+        - files:
+            - path: /etc/containers/registries.conf.d/99-bootstrap-registry.conf
               permissions: 0644
               content: |
-                install:
-                  partitions:
-                    state:
-                      size: 20480
+                [[registry]]
+                location = "10.243.166.5:11443"
+                insecure = true

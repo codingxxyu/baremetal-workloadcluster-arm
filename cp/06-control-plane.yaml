@@ -21,6 +21,7 @@ spec:
       kind: BaremetalMachineTemplate
       name: arm-workloadcluster-control-plane-template
   kubeadmConfigSpec:
+    format: cloud-config
     users:
       - name: boot
         sudo: ALL=(ALL) NOPASSWD:ALL
@@ -59,8 +60,8 @@ spec:
           {
             "apiVersion": "kubelet.config.k8s.io/v1beta1",
             "kind": "KubeletConfiguration",
+            "imagePullCredentialsVerificationPolicy": "NeverVerify",
             "protectKernelDefaults": true,
-            "staticPodPath": null,
             "tlsCertFile": "/etc/kubernetes/pki/kubelet.crt",
             "tlsPrivateKeyFile": "/etc/kubernetes/pki/kubelet.key",
             "streamingConnectionIdleTimeout": "5m",
@@ -149,6 +150,7 @@ spec:
           pathType: Directory
       controllerManager:
         extraArgs:
+          flex-volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           bind-address: "::"
           profiling: "false"
           tls-min-version: VersionTLS12
@@ -162,10 +164,12 @@ spec:
         directory: /etc/kubernetes/patches
       nodeRegistration:
         kubeletExtraArgs:
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           node-labels: "kube-ovn/role=master"
     joinConfiguration:
       patches:
         directory: /etc/kubernetes/patches
       nodeRegistration:
         kubeletExtraArgs:
+          volume-plugin-dir: "/opt/libexec/kubernetes/kubelet-plugins/volume/exec/"
           node-labels: "kube-ovn/role=master"
