@@ -143,6 +143,32 @@ CP 和 Worker 必须使用不同的 Registration 和 SeedImage 资源；两者�
 | kubeadm 镜像仓库 | `cp/06-control-plane.yaml` 的 `imageRepository` | 按目标 ACP 版本和产品文档确认，不要默认沿用其他环境 |
 | TPM / 安装盘 | 两个 Registration 的 Elemental 配置及 VM 安装流程 | 根据每台 VM 是否有 TPM、实际系统盘分别确认 |
 
+### 3.2 Mandiri 参考项目哪些可以复用
+
+以下内容可以从 `mandiri-workloadcluster` 参考项目照抄或保持同样结构，因为它们描述的是 ACP Bare Metal Provider 的资源关系，而不是 Mandiri 主机的现场值：
+
+- `MachineRegistration -> SeedImage -> MachineInventory -> MachineInventoryPool` 的资源关系；
+- `BaremetalCluster -> Cluster -> KubeadmControlPlane` 的控制面引用关系；
+- `MachineDeployment -> KubeadmConfigTemplate + BaremetalMachineTemplate` 的 Worker 引用关系；
+- `apiVersion`、`kind`、`spec` 的整体层级，以及资源创建顺序；
+- `targetPlatform: linux/arm64`、`device: /dev/elemental-install-target` 等 ARM/Elemental 约束；
+- `networkType: kube-ovn`、`cluster-type: ProviderBaremetal`；
+- KCP 和 MachineDeployment 的 `maxSurge: 0`、`maxUnavailable: 1` 策略；
+- KCP 的审计、TLS、kubelet、PodSecurity 和 kubeadm 配置结构；
+- Worker 的 `kube-ovn/role=worker` 标签；
+- server-side dry-run、Inventory Ready 检查、安装后弹出 ISO 并 disk-first 启动的操作流程。
+
+以下内容不能直接照抄 Mandiri，必须按目标环境修改：
+
+- 任何 `metadata.name`、`clusterName`、hostname、Inventory 名称和 Registration/SeedImage 名称；
+- namespace、Registry、ISO、rootfs、catalog key 和所有 ACP/Kubernetes 版本；
+- API VIP、LB 后端、端口、Pod/Service/Join CIDR；
+- `networkDevice`、节点 IP、网关、DNS、VLAN、bond 和 MTU；
+- SSH 公钥、kubeadm image repository、TPM 设置和安装盘；
+- CP/Worker 节点数量及对应 Pool 成员。
+
+特别注意：即使两个环境都使用 Bare Metal Provider，也不能直接复制 Mandiri 的 Inventory 名称、网卡名、IP、CIDR、Registry、版本或镜像 tag。资源结构可以复用，现场值必须重新确认。
+
 如果只创建 1 台 CP 或 1 台 Worker，不能只把 `replicas` 改成 `1`，还必须同步修改对应的 `MachineInventoryPool` 成员数量、LB 后端和高可用规划。
 
 以下内容通常保持不变，除非目标产品版本或网络方案不同：
@@ -192,7 +218,7 @@ grep -RInE '<[A-Z0-9_]+>' README.md cp worker
 示意检查：
 
 ```bash
-kubectl -n <MANAGEMENT_NAMESPACE> get configmap elemental-image-catalog -o yaml
+kubectl -n cpaas-system get configmap elemental-image-catalog -o yaml
 ```
 
 如果 ConfigMap 不存在，先确认 Bare Metal Provider 是否安装完成；不要自行创建一个看似正确但不符合 Provider 版本的 ConfigMap。
@@ -226,7 +252,7 @@ API VIP 必须提供 TCP passthrough：
 
 确认 `cp/01-registration-seedimage.yaml` 中的：
 
-- `<MANAGEMENT_NAMESPACE>`；
+- 管理命名空间当前固定为 `cpaas-system`；复用到其他环境时统一替换所有 YAML 中的 namespace；
 - ARM64 ISO 已固定为 `10.243.166.5:11443/tkestack/kubeos-iso:baremetal`；
 - 必要的 COS_STATE 容量和 TPM 设置。
 
@@ -235,7 +261,7 @@ API VIP 必须提供 TCP passthrough：
 ```bash
 kubectl apply --dry-run=server -f cp/01-registration-seedimage.yaml
 kubectl apply -f cp/01-registration-seedimage.yaml
-kubectl -n <MANAGEMENT_NAMESPACE> describe seedimage arm-workloadcluster-cp-registration-iso
+kubectl -n cpaas-system describe seedimage arm-workloadcluster-cp-registration-iso
 ```
 
 必须先看到 SeedImage 已生成并具有可下载地址，再给三台 CP VM 挂载 ISO。
@@ -261,7 +287,7 @@ readlink -f /dev/elemental-install-target
 ### 6.3 发现 CP Inventory
 
 ```bash
-kubectl -n <MANAGEMENT_NAMESPACE> \
+kubectl -n cpaas-system \
   get machineinventories.elemental.cattle.io -o wide
 ```
 
@@ -300,7 +326,7 @@ kubectl apply -f cp/06-control-plane.yaml
 控制面资源检查：
 
 ```bash
-kubectl -n <MANAGEMENT_NAMESPACE> \
+kubectl -n cpaas-system \
   get baremetalcluster,cluster,kubeadmcontrolplane,machine,baremetalmachine
 ```
 
@@ -320,14 +346,14 @@ kubectl -n <MANAGEMENT_NAMESPACE> \
 
 确认 `worker/01-registration-seedimage.yaml` 中的：
 
-- `<MANAGEMENT_NAMESPACE>`；
+- 管理命名空间当前固定为 `cpaas-system`；复用到其他环境时统一替换所有 YAML 中的 namespace；
 - ARM64 ISO 与 CP 使用同一个已确认的 `10.243.166.5:11443/tkestack/kubeos-iso:baremetal`；
 - 必要的 COS_STATE 容量和 TPM 设置。
 
 ```bash
 kubectl apply --dry-run=server -f worker/01-registration-seedimage.yaml
 kubectl apply -f worker/01-registration-seedimage.yaml
-kubectl -n <MANAGEMENT_NAMESPACE> describe seedimage arm-workloadcluster-worker-registration-iso
+kubectl -n cpaas-system describe seedimage arm-workloadcluster-worker-registration-iso
 ```
 
 不要使用 CP 的 ISO。
@@ -349,7 +375,7 @@ worker03 -> 10.243.166.135
 ### 7.3 发现 Worker Inventory 并创建 Pool
 
 ```bash
-kubectl -n <MANAGEMENT_NAMESPACE> \
+kubectl -n cpaas-system \
   get machineinventories.elemental.cattle.io -o wide
 ```
 
@@ -374,7 +400,7 @@ kubectl apply -f worker/05-worker-machine-deployment.yaml
 Worker 检查：
 
 ```bash
-kubectl -n <MANAGEMENT_NAMESPACE> \
+kubectl -n cpaas-system \
   get machinedeployment,machine,baremetalmachine
 ```
 
